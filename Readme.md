@@ -1,25 +1,35 @@
-# Understandable RayTracing in 256 lines of bare C++
+# TinyRayTracer Linux Framebuffer Benchmark
 
-This repository is a support code for my computer graphics lectures. It is not meant to be the ultimate rendering code or even physically realistic. It is meant to be **simple**. This project is distributed under the [DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE](https://en.wikipedia.org/wiki/WTFPL).
+The original project is: [https://github.com/ssloy/tinyraytracer](https://github.com/ssloy/tinyraytracer)
 
-**Check [the wiki](https://github.com/ssloy/tinyraytracer/wiki) that accompanies the source code. The second raytracing chapter is available [in the tinykaboom repository](https://github.com/ssloy/tinykaboom/wiki). If you are looking for a software rasterizer, check the [other part of the lectures](https://github.com/ssloy/tinyrenderer/wiki).**
+This benchmark is designed for measuring framebuffer
+rendering performance on embedded Linux dev boards.
 
-In my lectures I tend to avoid third party libraries as long as it is reasonable, because it forces to understand what is happening under the hood. So, the raytracing 256 lines of plain C++ give us this result:
-![](https://raw.githubusercontent.com/ssloy/tinyraytracer/master/out.jpg)
+## Build & Run
 
-## compilation
-```sh
-git clone https://github.com/ssloy/tinyraytracer.git
-cd tinyraytracer
-mkdir build
-cd build
-cmake ..
-make
+For example, you can cross-compile for `Luckfox Pico`. SDK is required.
+
+```shell
+mkdir build && cd build
+
+export CC=/home/developer/luckfox/pico/tools/linux/toolchain/arm-rockchip830-linux-uclibcgnueabihf/bin/arm-rockchip830-linux-uclibcgnueabihf-gcc
+export CXX=/home/developer/luckfox/pico/tools/linux/toolchain/arm-rockchip830-linux-uclibcgnueabihf/bin/arm-rockchip830-linux-uclibcgnueabihf-g++
+
+cmake .. -G Ninja
+
+ninja && adb push tinyraytracer /root
+adb shell "chmod +x /root/tinyraytracer && /root/tinyraytracer"
 ```
 
-You can open the project in Gitpod, a free online dev evironment for GitHub:
+A 1.8" 128x160 ST7735R TFT display is connected via SPI.
+After starting the benchmark, the raytracing demo scene will appear on the screen.
 
-[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/ssloy/tinyraytracer)
+Once the benchmark is complete, the results will be printed to the console.
 
-On open, the editor will compile & run the program as well as open the resulting image in the editor's preview.
-Just change the code in the editor and rerun the script (use the terminal's history) to see updated images.
+```shell
+Starting Benchmark...
+Rendered 100 frames in 10.1256 seconds.
+Average FPS: 9.876
+```
+
+That's it — happy hacking! 🚀

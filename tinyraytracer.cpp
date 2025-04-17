@@ -4,6 +4,14 @@
 #include <algorithm>
 #include <cmath>
 
+#include <chrono>
+#include <thread>
+#include <iostream>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <linux/fb.h>
+
 struct vec3 {
     float x=0, y=0, z=0;
           float& operator[](const int i)       { return i==0 ? x : (1==i ? y : z); }
@@ -125,25 +133,113 @@ vec3 cast_ray(const vec3 &orig, const vec3 &dir, const int depth=0) {
 }
 
 int main() {
-    constexpr int   width  = 1024;
-    constexpr int   height = 768;
-    constexpr float fov    = 1.05; // 60 degrees field of view in radians
-    std::vector<vec3> framebuffer(width*height);
-#pragma omp parallel for
-    for (int pix = 0; pix<width*height; pix++) { // actual rendering loop
-        float dir_x =  (pix%width + 0.5) -  width/2.;
-        float dir_y = -(pix/width + 0.5) + height/2.; // this flips the image at the same time
-        float dir_z = -height/(2.*tan(fov/2.));
-        framebuffer[pix] = cast_ray(vec3{0,0,0}, vec3{dir_x, dir_y, dir_z}.normalized());
+    const vec3 target = {0, 0, -15};
+    const vec3 up = {1, 1, 1};
+    const int total_frames = 100;
+    const float radius = 30.0f;
+    const float fov = 1.05; // 60 degrees field of view in radians
+    float angle = 0.0f;
+    int width;
+    int height;
+
+    int fbfd = open("/dev/fb0", O_RDWR);
+    if (fbfd < 0) {
+        perror("Error opening /dev/fb0");
+        return 1;
     }
 
-    std::ofstream ofs("./out.ppm", std::ios::binary);
-    ofs << "P6\n" << width << " " << height << "\n255\n";
-    for (vec3 &color : framebuffer) {
-        float max = std::max(1.f, std::max(color[0], std::max(color[1], color[2])));
-        for (int chan : {0,1,2})
-            ofs << (char)(255 *  color[chan]/max);
+    fb_var_screeninfo vinfo;
+    if (ioctl(fbfd, FBIOGET_VSCREENINFO, &vinfo)) {
+        perror("Error reading screen info");
+        close(fbfd);
+        return 1;
     }
+
+    if (vinfo.bits_per_pixel != 16) {
+        std::cerr << "Currently only RGB565 format is supported!" << std::endl;
+        close(fbfd);
+        return -1;
+    }
+
+    width = vinfo.xres;
+    height = vinfo.yres;
+
+    std::vector<vec3> framebuffer(width*height);
+    std::vector<uint16_t> fbout(width * height);
+
+    std::cout << "Starting Benchmark..." << std::endl;
+
+    auto start_time = std::chrono::steady_clock::now();
+    for (int frame_count = 0; frame_count < total_frames; frame_count++) {
+
+        vec3 eye = {
+            radius * std::sin(angle),
+            0,
+            radius * std::cos(angle)
+        };
+
+        vec3 z = (eye - target).normalized();
+        vec3 x = cross(up, z).normalized();
+        vec3 y = cross(z, x);
+
+#pragma omp parallel for
+        for (int pix = 0; pix < width * height; pix++) {
+            int pixel_x = pix % width;
+            int pixel_y = pix / width;
+
+            float dir_x = (pixel_x + 0.5) -  width / 2.;
+            float dir_y = -(pixel_y + 0.5) + height / 2.;
+            float dir_z = -height / (2. * tan(fov / 2.));
+
+            vec3 dir_cam = vec3{dir_x, dir_y, dir_z}.normalized();
+
+            vec3 ray_dir ={
+                x.x * dir_cam.x + y.x * dir_cam.y + z.x * dir_cam.z,
+                x.y * dir_cam.x + y.y * dir_cam.y + z.y * dir_cam.z,
+                x.z * dir_cam.x + y.z * dir_cam.y + z.z * dir_cam.z
+            };
+            ray_dir = ray_dir.normalized();
+
+            framebuffer[pix] = cast_ray(eye, ray_dir);
+        }
+
+        for (int i = 0; i < framebuffer.size(); i++) {
+            float max = std::max(1.f, std::max(framebuffer[i][0], std::max(framebuffer[i][1], framebuffer[i][2])));
+            float r = framebuffer[i][0] / max;
+            float g = framebuffer[i][1] / max;
+            float b = framebuffer[i][2] / max;
+
+            uint8_t R = (uint8_t)(r * 31.f + 0.5f);
+            uint8_t G = (uint8_t)(g * 63.f + 0.5f);
+            uint8_t B = (uint8_t)(b * 31.f + 0.5f);
+            fbout[i] = (R << 11) | (G << 5) | B;
+        }
+
+        /* reset the pointer to the beginning of the framebuffer */
+        lseek(fbfd, 0, SEEK_SET);
+        ssize_t writen = write(fbfd, fbout.data(), fbout.size() * 2); /* Buffer is RGB565 format */
+
+        angle += 0.05f;
+    }
+
+    auto end_time = std::chrono::steady_clock::now();
+    float elapsed_sec = std::chrono::duration<float>(end_time - start_time).count();
+
+    std::cout << "Rendered " << total_frames << " frames in " << elapsed_sec << " seconds.\n";
+    std::cout << "Average FPS: " << (total_frames / elapsed_sec) << "\n";
+
+    float pixel_fillrate = total_frames * width * height / elapsed_sec;
+
+    if (pixel_fillrate > 1000) {
+        std::cout << "Pixel Fillrate: " << pixel_fillrate / 1000 << " KPixel/s" << "\n";;
+    } else if (pixel_fillrate > 1000000) {
+        std::cout << "Pixel Fillrate: " << pixel_fillrate / 1000000 << " MPixel/s" << "\n";;
+    } else if (pixel_fillrate > 1000000000) {
+        std::cout << "Pixel Fillrate: " << pixel_fillrate / 1000000000 << " GPixel/s" << "\n";;
+    } else {
+        std::cout << "Pixel Fillrate: " << pixel_fillrate << " Pixel/s" << "\n";
+    }
+
     return 0;
 }
 
