@@ -7,6 +7,8 @@ rendering performance on embedded Linux dev boards.
 
 ## Build & Run
 
+### Run it on Luckfox Pico
+
 For example, you can cross-compile for `Luckfox Pico`. SDK is required.
 
 ```shell
@@ -33,3 +35,33 @@ Average FPS: 9.876
 ```
 
 That's it — happy hacking! 🚀
+
+### Run it on Luckfox Lyra
+
+```shell
+mkdir build && cd build
+
+export CC=${HOME}/luckfox/lyra/prebuilts/gcc/linux-x86/arm/gcc-arm-10.3-2021.07-x86_64-arm-none-linux-gnueabihf/bin/arm-none-linux-gnueabihf-gcc
+export CXX=${HOME}/luckfox/lyra/prebuilts/gcc/linux-x86/arm/gcc-arm-10.3-2021.07-x86_64-arm-none-linux-gnueabihf/bin/arm-none-linux-gnueabihf-g++
+
+cmake .. -G Ninja
+ninja && adb push tinyraytracer /root
+```
+
+It’s a bit different from the Luckfox Pico. After setting CC and CXX to the SDK toolchain and building the project successfully, you might also need to copy libgomp.so.1 to the device’s /lib directory.
+
+```shell
+adb push /home/developer/luckfox/lyra/prebuilts/gcc/linux-x86/arm/gcc-arm-10.3-2021.07-x86_64-arm-none-linux-gnueabihf/arm-none-linux-gnueabihf/lib/libgomp.so.1.0.0 /root
+```
+
+at device side, link it to `libgomp.so.1`:
+```shell
+cd /lib
+mv /root/libgomp.so.1.0.0 .
+ln -sf libgomp.so.1.0.0 libgomp.so.1
+```
+
+Then you can run the benchmark without any problem.
+```shell
+chmod +x /root/tinyraytracer && /root/tinyraytracer
+```
