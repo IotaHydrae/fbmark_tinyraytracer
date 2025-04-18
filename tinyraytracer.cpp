@@ -136,7 +136,7 @@ int main() {
     const vec3 target = {0, 0, -15};
     const vec3 up = {1, 1, 1};
     const int total_frames = 100;
-    const float radius = 30.0f;
+    const float radius = 45.0f;
     const float fov = 1.05; // 60 degrees field of view in radians
     float angle = 0.0f;
     int width;
